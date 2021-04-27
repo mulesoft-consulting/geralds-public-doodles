@@ -1,6 +1,6 @@
 asyncapi: '2.0.0'
 info:
-  title: Correlation ID and HTTP
+  title: Protocol adapter for events from HTTP to Anypoint MQ
   version: '0.0.1'
   description: |
     This app 

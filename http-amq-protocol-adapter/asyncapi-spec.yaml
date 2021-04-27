@@ -1,0 +1,153 @@
+asyncapi: '2.0.0'
+info:
+  title: Correlation ID and HTTP
+  version: '0.0.1'
+  description: |
+    This app 
+    receives event messages in HTTP POST requests, 
+    forwards them to an Anypoint MQ exchange, 
+    receives event data messages from an Anypoint MQ queue,
+    and forwards event data messages to event subscribers by sending HTTP PUT or POST requests.
+
+servers:
+  thisAppInProd:
+    x-server-group: thisApp
+    url: http://{host}:{port}/base
+    protocol: http
+    variables:
+      host:
+        description: The DNS name on which this app's HTTP endpoint can be reached in prod.
+      port:
+        description: The port on which this app's HTTP endpoint can be reached in prod.
+  eventSubscriberInProd:
+    x-server-group: eventSubscriber
+    url: http://{eventSubscriber_host}:{eventSubscriber_port}/{eventSubscriber_base}
+    protocol: http
+    variables:
+      eventSubscriber_host:
+        description: The DNS name on which an event subscriber's HTTP endpoint can be reached in prod.
+      eventSubscriber_port:
+        description: The port on which an event subscriber's HTTP endpoint can be reached in prod.
+      eventSubscriber_base:
+        description: The base URL path on which an event subscriber's HTTP endpoint can be reached in prod.
+  amqInProd:
+    x-server-group: amq
+    url: https://mq-us-east-1.anypoint.mulesoft.com/api
+    protocol: anypointmq
+    protocolVersion: v1
+
+defaultContentType: application/json
+
+channels:
+  /events/data/product/created:
+    x-server-group: thisApp
+    description: |
+      Channel linked to server group `thisApp` (ie, an HTTP endpoint exposed by this app) 
+      for event publishers to send change event messages to this app.
+    publish:
+      summary: Change event messages sent to this app.
+      operationId: eventReceived
+      bindings:
+        http:
+          type: request
+          method: POST
+      message:
+        $ref: '#/components/messages/event'
+  
+  product-created-dest:
+    x-server-group: amq
+    description: |
+      Channel linked to server group `amq` (ie, a destination on the Anypoint MQ broker)
+      for this app to send change event messages to an Anypoint MQ exchange.
+    subscribe:
+      summary: Change event messages sent by this app to an Anypoint MQ destination.
+      operationId: forwardReceivedEvent
+      message:
+        $ref: '#/components/messages/event'
+  
+  product-created-queue:
+    x-server-group: amq
+    description: |
+      Channel linked to server group `amq` (ie, a queue on the Anypoint MQ broker)
+      for this app to receive change event data from an Anypoint MQ queue.
+    publish:
+      summary: Change event data messages received by this app from an Anpoint MQ queue.
+      operationId: eventDataReceived
+      message:
+       $ref: "#/components/messages/eventData" 
+
+  /{eventSubscriber_path}:
+    x-server-group: eventSubscriber
+    description: |
+      Channel linked to server group `eventSubscriber` (ie, an HTTP endpoint exposed by an event subscriber)
+      for this app to send change event data messages to event subscribers.
+    parameters:
+      eventSubscriber_path:
+        description: The path (on top of the base path) on which this event subscribers listens for HTTP PUT/POST requests with event data.
+        schema:
+          type: string
+    subscribe:
+      summary: Change event data messages sent by this app to event subscribers.
+      operationId: forwardReceivedEventData
+      bindings:
+        http:
+          type: request
+      message:
+        $ref: '#/components/messages/eventData'
+
+components:
+  messages:
+    event:
+      name: Event Message
+      correlationId:
+        description: Correlation ID is sent in the headers section of the message payload.
+        location: "$message.payload#/headers/CorrelationID"
+      payload:
+        $ref: "#/components/schemas/eventPayload"
+    
+    eventData:
+      name: Event Data Message
+      correlationId:
+        description: Correlation ID is sent in the header.
+        location: "$message.header#/x-correlation-id"
+      headers:
+        type: object
+        properties:
+          x-correlation-id:
+            type: string
+          x-sent-at:
+            $ref: "#/components/schemas/sentAt"    
+      payload:
+        $ref: "#/components/schemas/eventDataPayload"
+      bindings:
+        http:
+          headers: 
+            type: object
+            properties:
+              x-correlation-id:
+                type: string
+              x-sent-at:
+                $ref: "#/components/schemas/sentAt"
+
+  schemas:
+    eventPayload:
+      description: The payload of event messages contains both data and headers.
+      type: object
+      properties:
+        CorrelationID:
+          type: string
+        timestamp:
+          $ref: "#/components/schemas/sentAt"
+        data:
+          type: object
+          # ...
+    
+    eventDataPayload:
+      description: The payload of event data messages contains just the event data.
+      type: object
+      # ...
+    
+    sentAt:
+      type: string
+      format: date-time
+      description: Date and time when the message was sent.
